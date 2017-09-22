@@ -1,0 +1,22 @@
+{
+  "manifest_version": 2,
+  "name": "0123 Movie Sorter",
+  "version": "0.0.1",
+  "description": "Sort movies from 0123movies.com & .org the way I want them.",
+  "author": "Tiaan Swart",
+  "homepage_url": "http://path/to/homepage",
+  "icons" : {
+    "16": "img/icon16.png",
+    "48": "img/icon48.png",
+    "64": "img/icon48.png",
+    "128": "img/icon128.png"
+  },
+  "browser_action": {
+    "default_icon": "img/icon.png"
+  },
+  "permissions": [ "tabs", "http://0123movies.com/*", "http://0123movies.org/*" ],
+  "content_scripts": [{
+     "js": [ "js/jquery-1.11.2.min.js", "js/jquery.cluetip.min.js", "js/contentScript.js" ],
+     "matches": [ "http://0123movies.com/*", "http://0123movies.org/*" ]
+  }]
+}
