@@ -1,28 +1,8 @@
-const removeInvalidImages = (currentHost, currentBase) => {
-	// Get the images
-	$('img').each(function( index ) {
-		// Get the img
-		let theImage = $(this);
-		let theSrc = theImage.attr('src');
-		// Only try
-		try {
-		    // If the host is not the same
-			if (!(new URL(theSrc)).host.endsWith(currentHost)) {
-				// Remove it
-				$(this).remove();
-				return true;
-			}
-		}
-		// Else remove
-		catch(err) {
-			// Remove it
-			$(this).remove();
-			return true;
-		}
-	});
-}
-
-const removeInvalidLinks = (currentHost, currentBase) => {
+const removeInvalidLinks = () => {
+	// Establish a base
+	let currentProtocol = location.protocol;
+	let currentHost = location.host;
+	let currentBase = currentProtocol + '//' + currentHost;
 	// Get the page links
 	$('a:link').each(function( index ) {
 		// Get the link
@@ -32,23 +12,15 @@ const removeInvalidLinks = (currentHost, currentBase) => {
 		// Or #
 		// Or javascript
 		if (theLink.startsWith('//') 
-		|| (theLink.startsWith('#') && theAnchor.attr('role') != 'tab')
+		|| (theLink.startsWith('#') && theAnchor.attr('role') != 'tab' 
+			&& theAnchor.parent().find('.sub-container').length == 0)
 		|| theLink.startsWith('javascript')) {
 			// Remove it
 			$(this).remove();
-			return true;
 		// Else if the link starts with / (internal link)
 		} else if (theLink.startsWith('/')) {
 			// Set a base
-			theLink = currentBase + theLink;
-			$(this).attr('href', theLink);
-		}
-		// Now that we know we have a proper link
-		// If the host is not the same
-		if ((new URL(theLink)).host != currentHost) {
-			// Remove it
-			$(this).remove();
-			return true;
+			$(this).attr('href', currentBase + theLink);
 		}
 	});
 }
@@ -60,6 +32,13 @@ const removeIframes = () => {
 const removeKnownAds = () => {
 	$('[class*="ads"]').remove();
 	$('[class*="addthis"]').remove();
+}
+
+const removeOnClickEvents = () => {
+	$('*').each(function( index ) {
+		this.onclick = '';
+		this.mousedown = '';
+	});
 }
 
 const sortMovies = (theMovieList) => {
@@ -76,9 +55,9 @@ const paginate = (theMovieListWrapper, appendingMovieList) => {
 	// Get progress bar
 	let theProgressBar = appendingMovieList.find('.progress-bar');
 	// Get the progress
-	let theProgress = theProgressBar.width() / theProgressBar.parent().width() * 100;
-	// If we have pagination
-	if (theMovieListWrapper.find('.pagination li.active').length && theProgress < 100) {
+	let theProgress = typeof theProgressBar.data('progress') !== 'undefined' ? theProgressBar.data('progress') : 1;
+	// If we have pagination and we havent reached the search limit yet
+	if (theMovieListWrapper.find('.pagination li.active').length && theProgress < pagesToSearch) {
 		// Get the page links
 		theMovieListWrapper.find('.pagination li.active').nextAll().each(function( index ) {
 			// Get the link
@@ -88,8 +67,10 @@ const paginate = (theMovieListWrapper, appendingMovieList) => {
 				url: theLink,
 				method: "GET"
 			}).done(function(data) {
-				// We only want to go down 10 pages (no one really goes down more... right?)
-				theProgressBar.css('width', (theProgress+10)+'%');
+				// We'll increment the progress bar
+				theProgressBar.css('width', (100 / pagesToSearch * theProgress)+'%');
+				// We'll increment the progress
+				theProgressBar.data('progress', theProgress + 1);
 				// We have the next set of movies, so get the info
 				getMoviesInfo($(data).find('.movies-list-wrap'), appendingMovieList);
 			})
@@ -104,9 +85,6 @@ const paginate = (theMovieListWrapper, appendingMovieList) => {
 	} else {
 		// Remove the progress bar. We are done
 		theProgressBar.parent().remove();
-		$(".jt").cluetip({
-			positionBy: 'fixed'
-		});
 	}
 	// No one likes to go looking for the good ones :)
 	sortMovies(appendingMovieList);
@@ -129,12 +107,12 @@ const getMoviesInfo = (theMovieListWrappers, appendingMovieList, tabIndex) => {
 			theAppendingList.prepend(
 				'<div class="progress">'+
 					'<div class="progress-bar progress-bar-striped active" role="progressbar" style="width:0%">'+
-						'<span style="color:black">Loading</span>'+
+						'<span style="color:black;padding:10px 0;">Loading</span>'+
 					'</div>'+
 				'</div>'
 			);
 		}
-		// A bit creepy but dig in
+		// A bit creepy but clone and yeah dig in
 		theMovieList.find('.ml-item').each(function( index ) {
 			// Get the elements we need
 			let theMovieElem = $(this);
@@ -144,26 +122,45 @@ const getMoviesInfo = (theMovieListWrappers, appendingMovieList, tabIndex) => {
 			let theTootipTopElem = theMovieElem.find('.jtip-top');
 			// Get the title
 			let theMovieTitle = theMovieMaskElem.attr('title');
-			// If it's not HD then why bother? Also duplicate control
-			if (theQualityElem.text() == 'HD' && theAppendingList.find('.ml-item[title="'+theMovieTitle+'"]').length == 0) {
+			// Get the year
+			let theYear = theTootipTopElem.find('.jt-info:nth-child(2)').text();
+			// Get the full movie name
+			let fullMovieName = theMovieTitle + ' (' + theYear + ')';
+			// Check that its HD, has no duplicate and has not been marked as watched
+			if (theQualityElem.text() == 'HD' 
+				&& theAppendingList.find('.ml-item[title="'+theMovieTitle+'"]').length == 0
+				&& !watchedMovies.includes(fullMovieName)) {
 				// Okay we have a good quality movie
 				// Now the fun starts
 				// Get the info we want so badly from the tooltip top
-				let theNewInfoElem = theTootipTopElem.clone().removeClass('jtip-top').addClass('mli-quality').css({'left' : 8, 'right' : 'auto'});
+				let theNewInfoElem = theTootipTopElem.clone()
+													 .removeClass('jtip-top')
+													 .addClass('mli-quality')
+													 .css({'left' : 8, 'right' : 'auto'});
 				// Now add the info right after the heading elem
 				thHeadingElem.after(theNewInfoElem);
 				let theIMDbRating = theTootipTopElem.find('.jt-imdb').text().replace('IMDb: ','');
-				let theYear = theTootipTopElem.find('.jt-info:nth-child(2)').text();
 				// We need to record the IMDB rating + the year for sorting
 				theMovieElem.attr('data-sorthandle', theYear+theIMDbRating);
 				// Set the title
-				theMovieElem.attr('title', theMovieTitle);
+				theMovieElem.attr('title', fullMovieName);
 				// Set the mask target and set the link to play mode
-				theMovieMaskElem.attr('target','_blank').attr('href', theMovieMaskElem.attr('href') + '?play=1');
+				theMovieMaskElem.attr('target','_blank')
+								.attr('href', theMovieMaskElem.attr('href') + '?play=1');
 				// Add the movie back in
 				theAppendingList.append(theMovieElem);
 				// Make sure the thumb is visible
 				theMovieElem.find('.mli-thumb').attr('style','');
+				// Add button to top for removing
+				let theButton = $('<a>Remove</a>').addClass('jtip-quality markAsWatchedBtn text-center')
+									 			  .css({'top':0,'width':'100%','height':18,'border-radius':'5px 5px 0 0','padding-top':'5px','z-index':9});
+				theMovieElem.prepend(theButton);
+				// Set additional styling
+				theMovieMaskElem.css({'padding-top':'18px'});
+				theMovieMaskElem.find('.mli-quality, .mli-eps').css({'top':'26px'});
+				theButton.hover(function() { 
+				    $(this).css({'cursor':'pointer'});
+				})
 			} else {
 				theMovieElem.remove();
 			}
@@ -173,41 +170,79 @@ const getMoviesInfo = (theMovieListWrappers, appendingMovieList, tabIndex) => {
 	});
 }
 
+var pagesToSearch;
+var watchedMovies;
+
 const init = () => {
-	// Establish a base
-	let currentProtocol = location.protocol;
-	let currentHost = location.host;
-	let currentBase = currentProtocol + '//' + currentHost;
 	// Some virus protection
-	removeInvalidImages(currentHost, currentBase),
-	removeInvalidLinks(currentHost, currentBase),
+	removeInvalidLinks(),
 	removeIframes(),
 	removeKnownAds(),
-	// Get the info from movies
-	getMoviesInfo($('.movies-list-wrap'), null, null),
-	// Handle nav tab clicks
-	$(".nav-tabs").delegate('li', 'click', function () {
-		// Get the index
-		let theIndex = $(this).index() + 1;
-		// Get the parents
-		let theInlaws = $(this).parents('.movies-list-wrap');
-		// Get the list
-		let theMovieList = theInlaws.find('.movies-list:nth-child('+theIndex+')');
-		// If this list has no childen (still needs to be loaded)
-		if (!theMovieList.find('.ml-item').length) {
-			// Hide and seek
-			theMovieList.hide();
-			// Create loading animation
-			theInlaws.append($('<div class="cssload-center"><div class="cssload"><span></span></div></div>'));
-			// Wait 3 seconds (I'd much rather wait for DOMSubtreeModified trigger but I am lazy)
-			setTimeout(function(){
-				// Get the info from movies
-				getMoviesInfo(theInlaws, theMovieList, theIndex);
-				// Remove loading animation
-				$('.cssload-center').remove();
-			}, 3000);
+	removeOnClickEvents(),
+	// If the extention is enabled
+	chrome.storage.sync.get({
+		enabled: true,
+    	pagesToSearch: 10,
+    	watchedMovies: []
+	}, function(items) {
+		pagesToSearch = items.pagesToSearch;
+		watchedMovies = items.watchedMovies;
+		if (items.enabled) {
+			// Get the info from movies
+			getMoviesInfo($('.movies-list-wrap'), null, null),
+			// Handle nav tab clicks
+			$(".nav-tabs").delegate('li', 'click', function () {
+				// Get the index
+				let theIndex = $(this).index() + 1;
+				// Get the parents
+				let theInlaws = $(this).parents('.movies-list-wrap');
+				// Get the list
+				let theMovieList = theInlaws.find('.movies-list:nth-child('+theIndex+')');
+				// If this list has no childen (still needs to be loaded)
+				if (!theMovieList.find('.ml-item').length) {
+					// Hide and seek
+					theMovieList.hide();
+					// Wait 3 seconds (I'd much rather wait for DOMSubtreeModified trigger but I am lazy)
+					setTimeout(function(){
+						// Get the info from movies
+						getMoviesInfo(theInlaws, theMovieList, theIndex);
+					}, 3000);
+				}
+			});
+			// First remove all onclick events again for inserted elements
+			removeOnClickEvents();
+			// Add button events
+			$(document).delegate('.markAsWatchedBtn', 'click', function(){
+				// Get the elements we need
+				let theMovieElem = $(this).closest('.ml-item');
+				let theMovieMaskElem = theMovieElem.find('.ml-mask');
+				let theTootipTopElem = theMovieElem.find('.jtip-top');
+				// Get the data we need
+				let theMovieTitle = theMovieMaskElem.attr('title');
+				let theYear = theTootipTopElem.find('.jt-info:nth-child(2)').text();
+				// Get the full movie name
+				let fullMovieName = theMovieTitle + ' (' + theYear + ')';
+				// Get the movie list again
+				chrome.storage.sync.get({
+					watchedMovies: []
+				}, function(items) {
+					watchedMovies = items.watchedMovies;
+					// Add the movie to the list if not already there
+					if (!watchedMovies.includes(fullMovieName)) {
+						watchedMovies.push(fullMovieName);
+					}
+					// Store the movie name in the list
+					chrome.storage.sync.set({
+						watchedMovies: watchedMovies
+					}, function() {
+						// Remove it
+						theMovieElem.remove();
+					});
+				});
+			});
 		}
 	});
 }
 
+// Init when loaded
 init();
