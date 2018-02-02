@@ -261,8 +261,8 @@ const init = () => {
 				}, function(items) {
 					watchedMoviesList = items.watchedMovies;
 					// Add the movie to the list if not already there
-					if (!watchedMovies.includes(fullMovieName)) {
-						watchedMovies.push(fullMovieName);
+					if (!watchedMoviesList.includes(fullMovieName)) {
+						watchedMoviesList.push(fullMovieName);
 					}
 					// Store the movie name in the list
 					chrome.storage.sync.set({
